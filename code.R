@@ -90,44 +90,95 @@ edx %>%
   geom_line()
 
 
-
-
-
 # MovieLens Project
+
+set.seed(755)
+test_index <- createDataPartition(y = edx$rating, times = 1, p = 0.2, 
+                                  list = FALSE)
+train_set <- edx[-test_index,]
+test_set <- edx[test_index,]
+
+test_set <- test_set %>% 
+  semi_join(train_set, by = "movieId") %>%
+  semi_join(train_set, by = "userId")
+
+## Function computing the RMSE
 RMSE <- function(true_ratings, predicted_ratings){
   sqrt(mean((true_ratings - predicted_ratings)^2))
 }
 
-mean(edx$rating)
-naive_rmse <- RMSE(edx$rating, mean(edx$rating))
-
-rmse_results <- tibble(method = "Just the average", RMSE = naive_rmse)
-
-mu <- mean(edx$rating)
-movie_avgs <- edx %>% 
+mu <- mean(train_set$rating) 
+movie_avgs <- train_set %>% 
   group_by(movieId) %>% 
   summarize(b_i = mean(rating - mu))
 
-predicted_ratings <- mu + edx %>% 
-  left_join(movie_avgs, by='movieId') %>%
-  pull(b_i)
-
-edx %>% 
-  group_by(userId) %>% 
-  summarize(b_u = mean(rating)) %>% 
-  filter(n()>=100) %>%
-  ggplot(aes(b_u)) + 
-  geom_histogram(bins = 30, color = "black")
-
-user_avgs <- edx %>% 
+user_avgs <- train_set %>% 
   left_join(movie_avgs, by='movieId') %>%
   group_by(userId) %>%
   summarize(b_u = mean(rating - mu - b_i))
 
-predicted_ratings <- edx %>% 
+predicted_ratings <- test_set %>% 
   left_join(movie_avgs, by='movieId') %>%
   left_join(user_avgs, by='userId') %>%
   mutate(pred = mu + b_i + b_u) %>%
   pull(pred)
+RMSE(predicted_ratings, test_set$rating)
 
-RMSE(predicted_ratings, edx$rating)
+
+
+lambdas <- seq(0, 10, 0.25)
+
+rmses <- sapply(lambdas, function(l){
+  
+  mu <- mean(train_set$rating)
+  
+  b_i <- train_set %>% 
+    group_by(movieId) %>%
+    summarize(b_i = sum(rating - mu)/(n()+l))
+  
+  b_u <- train_set %>% 
+    left_join(b_i, by="movieId") %>%
+    group_by(userId) %>%
+    summarize(b_u = sum(rating - b_i - mu)/(n()+l))
+  
+  predicted_ratings <- 
+    test_set %>% 
+    left_join(b_i, by = "movieId") %>%
+    left_join(b_u, by = "userId") %>%
+    mutate(pred = mu + b_i + b_u) %>%
+    pull(pred)
+  
+  return(RMSE(predicted_ratings, test_set$rating))
+})
+
+qplot(lambdas, rmses)
+
+lambda <- lambdas[which.min(rmses)]
+lambda
+
+rmses[lambdas == lambda]
+
+
+
+mu <- mean(edx$rating)
+
+b_i <- edx %>% 
+  group_by(movieId) %>%
+  summarize(b_i = sum(rating - mu)/(n()+lambda))
+
+b_u <- edx %>% 
+  left_join(b_i, by="movieId") %>%
+  group_by(userId) %>%
+  summarize(b_u = sum(rating - b_i - mu)/(n()+lambda))
+
+predicted_ratings <- 
+  validation %>% 
+  left_join(b_i, by = "movieId") %>%
+  left_join(b_u, by = "userId") %>%
+  mutate(pred = mu + b_i + b_u) %>%
+  pull(pred)
+
+newly <- na.omit(data.frame(a = predicted_ratings, b = validation$rating))
+RMSE(newly$a, newly$b)
+
+head(train_set)
