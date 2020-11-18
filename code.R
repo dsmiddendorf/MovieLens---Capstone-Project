@@ -96,12 +96,12 @@ edx %>%
 ## Split the edx dataset into test and training set
 test_index <- createDataPartition(y = edx$rating, times = 1, p = 0.2, 
                                   list = FALSE)
-train_set <- edx[-test_index,]
-test_set <- edx[test_index,]
+train <- edx[-test_index,]
+train <- edx[test_index,]
 
-test_set <- test_set %>% 
-  semi_join(train_set, by = "movieId") %>%
-  semi_join(train_set, by = "userId")
+test <- test %>% 
+  semi_join(train, by = "movieId") %>%
+  semi_join(train, by = "userId")
 
 ## Creating a function that computes the Residual Mean Squared Error (Input: True score, Predicted score)
 RMSE <- function(true_ratings, predicted_ratings){
@@ -121,29 +121,29 @@ lambdas <- seq(0, 10, 0.25)
 ### To choose the best penalty term (lamda) we created various models with various lambdas.
 rmses <- sapply(lambdas, function(l){
   
-  mu <- mean(train_set$rating)
+  mu <- mean(train$rating)
   
   # Effect of the regulized average rating of each movie
-  b_i <- train_set %>% 
+  movie_effect <- train %>% 
     group_by(movieId) %>%
-    summarize(b_i = sum(rating - mu)/(n()+l))
+    summarize(movie_effect = sum(rating - mu)/(n()+l))
   
   # Effect of the regulized average rating of each user controlled by movieID 
-  b_u <- train_set %>% 
-    left_join(b_i, by="movieId") %>%
+  user_effect <- train %>% 
+    left_join(movie_effect, by="movieId") %>%
     group_by(userId) %>%
-    summarize(b_u = sum(rating - b_i - mu)/(n()+l))
+    summarize(user_effect = sum(rating - movie_effect - mu)/(n()+l))
   
   # Construction of predictors based on the model: ratings = alpha + movie ratings * x1 + user effect * x2
   predicted_ratings <- 
-    test_set %>% 
-    left_join(b_i, by = "movieId") %>%
-    left_join(b_u, by = "userId") %>%
-    mutate(pred = mu + b_i + b_u) %>%
+    test %>% 
+    left_join(movie_effect, by = "movieId") %>%
+    left_join(user_effect, by = "userId") %>%
+    mutate(pred = mu + movie_effect + user_effect) %>%
     pull(pred)
   
   # Calculation of RMSE for each of the employed lambdas
-  return(RMSE(predicted_ratings, test_set$rating))
+  return(RMSE(predicted_ratings, test$rating))
 })
 
 ## Create a plot of the RMSEs for the different lambdas employed
@@ -153,20 +153,20 @@ qplot(lambdas, rmses)
 lambda <- lambdas[which.min(rmses)]
 
 ## Creating the final model with the validation set using the complete edx dataset.
-b_i <- edx %>% 
+movie_effect <- edx %>% 
   group_by(movieId) %>%
-  summarize(b_i = sum(rating - mu)/(n()+lambda))
+  summarize(movie_effect = sum(rating - mu)/(n()+lambda))
 
-b_u <- edx %>% 
-  left_join(b_i, by="movieId") %>%
+user_effect <- edx %>% 
+  left_join(movie_effect, by="movieId") %>%
   group_by(userId) %>%
-  summarize(b_u = sum(rating - b_i - mu)/(n()+lambda))
+  summarize(user_effect = sum(rating - movie_effect - mu)/(n()+lambda))
 
 predicted_ratings <- 
   validation %>% 
-  left_join(b_i, by = "movieId") %>%
-  left_join(b_u, by = "userId") %>%
-  mutate(pred = mu + b_i + b_u) %>%
+  left_join(movie_effect, by = "movieId") %>%
+  left_join(user_effect, by = "userId") %>%
+  mutate(pred = mu + movie_effect + user_effect) %>%
   pull(pred)
 
 ### Omitting NA values and creating a new dataframe with predicted ratings and ratings actually obtained
