@@ -89,10 +89,11 @@ edx %>%
   ggplot(aes(x = rating, y = count)) +
   geom_line()
 
+##########################################################
+# Main Analysis for MovieLens Project
+##########################################################
 
-# MovieLens Project
-
-set.seed(755)
+## Split the edx dataset into test and training set
 test_index <- createDataPartition(y = edx$rating, times = 1, p = 0.2, 
                                   list = FALSE)
 train_set <- edx[-test_index,]
@@ -102,45 +103,38 @@ test_set <- test_set %>%
   semi_join(train_set, by = "movieId") %>%
   semi_join(train_set, by = "userId")
 
-## Function computing the RMSE
+## Creating a function that computes the Residual Mean Squared Error (Input: True score, Predicted score)
 RMSE <- function(true_ratings, predicted_ratings){
   sqrt(mean((true_ratings - predicted_ratings)^2))
 }
 
-mu <- mean(train_set$rating) 
-movie_avgs <- train_set %>% 
-  group_by(movieId) %>% 
-  summarize(b_i = mean(rating - mu))
 
-user_avgs <- train_set %>% 
-  left_join(movie_avgs, by='movieId') %>%
-  group_by(userId) %>%
-  summarize(b_u = mean(rating - mu - b_i))
+## Creating the final Model
 
-predicted_ratings <- test_set %>% 
-  left_join(movie_avgs, by='movieId') %>%
-  left_join(user_avgs, by='userId') %>%
-  mutate(pred = mu + b_i + b_u) %>%
-  pull(pred)
-RMSE(predicted_ratings, test_set$rating)
-
-
+### Create a sequence of lamdas from 0 to 10 in .25 steps in order to control the total variability
+### of the movie effects. This means that when the sample size is really large n + lambda ≈ n so that lamda does
+### not have a great influence. Only when n is very small lamda will regulize this effect and will shrink it
+### towards 0.
 
 lambdas <- seq(0, 10, 0.25)
 
+### To choose the best penalty term (lamda) we created various models with various lambdas.
 rmses <- sapply(lambdas, function(l){
   
   mu <- mean(train_set$rating)
   
+  # Effect of the regulized average rating of each movie
   b_i <- train_set %>% 
     group_by(movieId) %>%
     summarize(b_i = sum(rating - mu)/(n()+l))
   
+  # Effect of the regulized average rating of each user controlled by movieID 
   b_u <- train_set %>% 
     left_join(b_i, by="movieId") %>%
     group_by(userId) %>%
     summarize(b_u = sum(rating - b_i - mu)/(n()+l))
   
+  # Construction of predictors based on the model: ratings = alpha + movie ratings * x1 + user effect * x2
   predicted_ratings <- 
     test_set %>% 
     left_join(b_i, by = "movieId") %>%
@@ -148,20 +142,17 @@ rmses <- sapply(lambdas, function(l){
     mutate(pred = mu + b_i + b_u) %>%
     pull(pred)
   
+  # Calculation of RMSE for each of the employed lambdas
   return(RMSE(predicted_ratings, test_set$rating))
 })
 
+## Create a plot of the RMSEs for the different lambdas employed
 qplot(lambdas, rmses)
 
+## Determining which lambda value results in the lowest RMSEs in the test set
 lambda <- lambdas[which.min(rmses)]
-lambda
 
-rmses[lambdas == lambda]
-
-
-
-mu <- mean(edx$rating)
-
+## Creating the final model with the validation set using the complete edx dataset.
 b_i <- edx %>% 
   group_by(movieId) %>%
   summarize(b_i = sum(rating - mu)/(n()+lambda))
@@ -178,7 +169,8 @@ predicted_ratings <-
   mutate(pred = mu + b_i + b_u) %>%
   pull(pred)
 
+### Omitting NA values and creating a new dataframe with predicted ratings and ratings actually obtained
 newly <- na.omit(data.frame(a = predicted_ratings, b = validation$rating))
-RMSE(newly$a, newly$b)
 
-head(train_set)
+## Final RMSE on the validation set
+RMSE(newly$a, newly$b)
