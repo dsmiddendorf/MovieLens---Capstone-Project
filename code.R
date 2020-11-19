@@ -66,7 +66,7 @@ sapply(genres, function(g) {
   sum(str_detect(edx$genres, g))
 })
 
-## separate_rows, much slower!
+#separate_rows, much slower!
 edx %>% separate_rows(genres, sep = "\\|") %>%
   group_by(genres) %>%
   summarize(count = n()) %>%
@@ -93,11 +93,22 @@ edx %>%
 # Main Analysis for MovieLens Project
 ##########################################################
 
+## Exploration of the data
+
+### Histogram of the rating distribution
+ggplot(edx, aes(rating)) + geom_histogram()
+
+### Historgram of the ratings per user. It answers the question: Do all users left an approximately equal amount of ratings?
+data.frame(userID = edx$userId, index = replicate(length(edx$userId),1)) %>%
+  group_by(userID) %>%
+  summarize(sum = sum(index)) %>%
+  ggplot(aes(sum)) + geom_histogram() + scale_x_log10() + xlab("Rating Number in log scale") + ylab("Number of Users") + theme_classic() 
+
 ## Split the edx dataset into test and training set
 test_index <- createDataPartition(y = edx$rating, times = 1, p = 0.2, 
                                   list = FALSE)
 train <- edx[-test_index,]
-train <- edx[test_index,]
+test <- edx[test_index,]
 
 test <- test %>% 
   semi_join(train, by = "movieId") %>%
@@ -112,7 +123,7 @@ RMSE <- function(true_ratings, predicted_ratings){
 ## Creating the final Model
 
 ### Create a sequence of lamdas from 0 to 10 in .25 steps in order to control the total variability
-### of the movie effects. This means that when the sample size is really large n + lambda ≈ n so that lamda does
+### of the movie effects. This means that when the sample size is really large n + lambda approximately equals n so that lamda does
 ### not have a great influence. Only when n is very small lamda will regulize this effect and will shrink it
 ### towards 0.
 
@@ -151,8 +162,10 @@ qplot(lambdas, rmses)
 
 ## Determining which lambda value results in the lowest RMSEs in the test set
 lambda <- lambdas[which.min(rmses)]
-
+lambda
 ## Creating the final model with the validation set using the complete edx dataset.
+mu <- mean(edx$rating)
+
 movie_effect <- edx %>% 
   group_by(movieId) %>%
   summarize(movie_effect = sum(rating - mu)/(n()+lambda))
@@ -162,8 +175,7 @@ user_effect <- edx %>%
   group_by(userId) %>%
   summarize(user_effect = sum(rating - movie_effect - mu)/(n()+lambda))
 
-predicted_ratings <- 
-  validation %>% 
+predicted_ratings <- validation %>% 
   left_join(movie_effect, by = "movieId") %>%
   left_join(user_effect, by = "userId") %>%
   mutate(pred = mu + movie_effect + user_effect) %>%
